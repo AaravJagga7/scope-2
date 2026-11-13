@@ -1,0 +1,60 @@
+{
+  "timestamp": "2026-11-13T04:49:36.990888+00:00",
+  "config_file": "/var/folders/1n/qt0dq89n33l06k5hnzyy1s_40000gn/T/tmpfe4q1lov.json",
+  "seed": 42,
+  "applied_changes": {
+    "inventory": {
+      "db_pool_size": 40
+    },
+    "order": {
+      "db_pool_size": 40
+    },
+    "checkout": {
+      "replicas": 1
+    }
+  },
+  "target_config": {
+    "scaling_mode": "hpa",
+    "checkout": {
+      "replicas": 1,
+      "cpu_limit": "500m"
+    },
+    "order": {
+      "db_pool_size": 40,
+      "consumer_count": 1
+    },
+    "inventory": {
+      "db_pool_size": 40
+    },
+    "product": {
+      "cache_enabled": true
+    },
+    "hpa": {
+      "metric": "cpu",
+      "target_cpu_utilization_pct": 70,
+      "min_replicas": 1,
+      "max_replicas": 6,
+      "scale_up_stabilization_seconds": 0,
+      "scale_down_stabilization_seconds": 60,
+      "scale_up_policy": "percent",
+      "scale_up_value": 100,
+      "scale_down_policy": "percent",
+      "scale_down_value": 100
+    }
+  },
+  "scaling": {
+    "mode": "hpa",
+    "hpa": {
+      "enabled": true,
+      "target": "checkout",
+      "metric": "cpu",
+      "min_replicas": 1,
+      "max_replicas": 6,
+      "target_cpu_utilization_pct": 70,
+      "scale_up_stabilization_seconds": 0,
+      "scale_down_stabilization_seconds": 60
+    },
+    "vpa": null
+  },
+  "status": "COMPLETED"
+}

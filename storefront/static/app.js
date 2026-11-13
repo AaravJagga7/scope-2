@@ -6,11 +6,35 @@
   const state = { health: null, testbed: null, timers: [], lab: { test: null, poll: null, whatif: null, whatifTimer: null, shieldPoll: null, drop: null } };
   /** Interval that is cleared automatically when the user changes page. */
   const every = (fn, ms) => { const id = setInterval(fn, ms); state.timers.push(id); return id; };
+  /** Where live results were measured (set by the server via SCOPEX_TESTBED_LABEL). */
+  const LABEL = () => (state.health && state.health.testbed_label) || "validated on local testbed";
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const ago = (ts) => { if (!ts) return "–"; const s = Math.max(0, Date.now() / 1000 - ts); return s < 60 ? `${Math.round(s)}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); };
 
+  /** Read-only snapshot mode (static hosting, e.g. Vercel): GETs come from /snapshot/*.json, writes are refused. */
+  const DEMO = window.SCOPEX_DEMO || null;
+  const snapKey = (path) => path.replace(/^\/api\//, "").replace(/[/?=&]/g, "_") + ".json";
+  async function demoApi(path, opts) {
+    const method = (opts.method || "GET").toUpperCase();
+    let file = snapKey(path);
+    if (method !== "GET") {
+      if (path === "/api/lab/whatif" && opts.body === JSON.stringify(DEMO.whatif_default)) file = "lab_whatif.json";
+      else { const e = new Error("Read-only snapshot: run the lab locally (python -m storefront) to change settings or start tests."); e.status = 405; throw e; }
+    }
+    const res = await fetch("/snapshot/" + file);
+    if (!res.ok) { const e = new Error("Not in this snapshot."); e.status = 404; throw e; }
+    return res.json();
+  }
+
   async function api(path, opts = {}) {
-    const res = await fetch(path, { headers: { "content-type": "application/json" }, credentials: "same-origin", ...opts });
+    if (DEMO) return demoApi(path, opts);
+    let token = "";
+    try { token = localStorage.getItem("scopex_lab_token") || ""; } catch { /* storage blocked */ }
+    const res = await fetch(path, { headers: { "content-type": "application/json", ...(token ? { "x-lab-token": token } : {}) }, credentials: "same-origin", ...opts });
+    if (res.status === 401 && !opts._retried) {
+      const t = window.prompt("This lab is write-protected. Enter the lab token to run tests or change settings:");
+      if (t) { try { localStorage.setItem("scopex_lab_token", t.trim()); } catch { /* storage blocked */ } return api(path, { ...opts, _retried: true }); }
+    }
     const text = await res.text();
     let data;
     try { data = text ? JSON.parse(text) : {}; } catch { data = { detail: text }; }
@@ -49,6 +73,11 @@
   ];
 
   function initShell() {
+    if (DEMO) {
+      const d = $("#demo-note");
+      d.hidden = false;
+      d.innerHTML = `<b>Read-only snapshot.</b> Results below were measured on the local SCOPE-X testbed on ${esc(DEMO.captured)} and are shown as recorded. Controls are disabled here; run <code>python -m storefront</code> locally to run tests.`;
+    }
     $("#nav").innerHTML = PAGES.map((p) => `<a href="${p.hash}" data-page="${p.id}">${icon(p.id)}<span>${p.label}</span></a>`).join("");
     pollHealth();
     setInterval(pollHealth, 3000);
@@ -199,7 +228,7 @@
         bars = (state.sweepCache.steps || []).map((s) => ({ label: `${s.offered_rps}`, value: s.checkout_p95_ms, tip: `${Math.round(s.checkout_p95_ms)} ms · ${s.error_pct}% err` }));
         sub = `Checkout p95 per offered load (rps), sweep ${last.id}`;
         const b = last.result.observed_bound;
-        note = b ? `<span class="label-chip live">validated on local testbed</span> ${esc(b.constraint)} · tested ${b.tested_region.rps[0]}–${b.tested_region.rps[1]} rps` : "";
+        note = b ? `<span class="label-chip live">${esc(LABEL())}</span> ${esc(b.constraint)} · tested ${b.tested_region.rps[0]}–${b.tested_region.rps[1]} rps` : "";
       } else sub = "No finished sweep yet. Run a boundary sweep on the Live tests page.";
     }
     if (!$("#stat-chart")) return;
@@ -223,7 +252,7 @@
       <div class="lab-grid">
         <div class="stack">
           <div class="panel controls">
-            <h3>Testbed config <span class="label-chip live">validated on local testbed</span></h3>
+            <h3>Testbed config <span class="label-chip live">${esc(LABEL())}</span></h3>
             <div class="tiny" style="margin-bottom:10px">Apply = reset to a clean baseline and relaunch all six services with these settings. ${esc(tb.storage)}.</div>
             ${slider("checkout_workers", "Checkout workers (replicas)", 1, 8, 1, cfg.checkout_workers)}
             ${slider("inventory_workers", "Inventory workers", 1, 4, 1, cfg.inventory_workers)}
@@ -253,7 +282,7 @@
         </div>
         <div class="stack">
           <div class="kpis" id="t-kpis">${kpi("–", "checkout p95 (last s)")}${kpi("–", "error rate")}${kpi("–", "offered rps")}${kpi("–", "in-flight")}</div>
-          <div class="panel"><h3>Latest result per experiment type <span class="label-chip live">validated on local testbed</span></h3>
+          <div class="panel"><h3>Latest result per experiment type <span class="label-chip live">${esc(LABEL())}</span></h3>
             <div class="tiny" style="margin-bottom:10px">Most recent finished run of each type on this server, at the testbed config it ran with. “Run again” loads that type into the test form.</div>
             <div id="t-types" class="type-grid"></div></div>
           <div class="panel"><h3>Live per-second telemetry</h3><div id="t-legend"></div><div id="t-chart"></div></div>
@@ -457,7 +486,7 @@
       <td>${s.client_saturated ? "⚠️ client" : s.server_throughput_below_offered ? "server < offered" : "ok"}</td><td>${s.meets_slo === undefined ? "" : s.meets_slo ? clsPill("valid") : '<span class="pill fires">violates</span>'}</td></tr>`).join("");
     let head = "";
     if (r.observed_bound) {
-      head = `<div class="notice ${r.observed_bound.first_rps_violating_slo ? "" : "good"}"><span class="label-chip live">validated on local testbed</span><br><b>Observed constraint:</b> <code>${esc(r.observed_bound.constraint)}</code>
+      head = `<div class="notice ${r.observed_bound.first_rps_violating_slo ? "" : "good"}"><span class="label-chip live">${esc(LABEL())}</span><br><b>Observed constraint:</b> <code>${esc(r.observed_bound.constraint)}</code>
         <div class="tiny">Tested region: ${esc(JSON.stringify(r.observed_bound.tested_region))}${r.aborted ? ` · abort condition: ${esc(r.aborted)}` : ""}</div></div>`;
     } else if (r.recovered !== undefined) {
       head = `<div class="notice ${r.recovered ? "good" : "bad"}">Recovery after spike: <b>${r.recovered ? "recovered to baseline" : "did not recover within 8 s"}</b></div>`;
@@ -689,7 +718,7 @@
     if (!A.length) { $("#d-result").innerHTML = `<span class="muted">Cancelled before an arm finished.</span>`; return; }
     const fmtObj = (o) => Object.entries(o || {}).map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`).join(", ") || "–";
     const row = (label, f, good) => `<tr><td>${label}</td>${A.map((a) => { const v = f(a); const g = good && v != null ? good(a) : null; return `<td>${g === null ? "" : g ? "🟢 " : "🔴 "}<b>${v ?? "–"}</b></td>`; }).join("")}</tr>`;
-    $("#d-result").innerHTML = `<div class="notice"><span class="label-chip live">validated on local testbed</span> Drop of <b>${r.params.stock}</b> units, ${r.params.humans} humans, ${r.params.bots} bots at ${r.params.bot_rps}/s, ${Math.round(r.params.abandon_pct * 100)}% abandon, hold TTL ${r.params.hold_ttl_s}s. <span class="tiny">${esc(r.caveat)}</span></div>
+    $("#d-result").innerHTML = `<div class="notice"><span class="label-chip live">${esc(LABEL())}</span> Drop of <b>${r.params.stock}</b> units, ${r.params.humans} humans, ${r.params.bots} bots at ${r.params.bot_rps}/s, ${Math.round(r.params.abandon_pct * 100)}% abandon, hold TTL ${r.params.hold_ttl_s}s. <span class="tiny">${esc(r.caveat)}</span></div>
       <div class="scroll-x"><table class="t"><tr><th>metric</th>${A.map((a) => `<th>shield ${a.arm}</th>`).join("")}</tr>
       ${row("units sold / stock", (a) => `${a.units_sold} / ${a.stock}`)}
       ${row("oversold units", (a) => a.oversold_units, (a) => a.oversold_units === 0)}

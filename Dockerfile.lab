@@ -1,0 +1,20 @@
+# SCOPE-X Constraint Lab: dashboard + the six testbed services in one container.
+# Used by railway.json. (The plain Dockerfile builds the product service for compose/k8s.)
+FROM python:3.11-slim
+
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app \
+    SCOPEX_TESTBED_LABEL="validated on cloud testbed (Railway container)"
+
+COPY pyproject.toml README.md ./
+COPY scopex/ ./scopex/
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir .
+
+COPY services/ ./services/
+COPY storefront/ ./storefront/
+COPY data/ ./data/
+
+# Railway injects PORT. The drop test reaches the store over loopback (see app.py).
+CMD ["sh", "-c", "SCOPEX_INTERNAL_URL=http://127.0.0.1:${PORT:-8010}/ exec python -m storefront --host 0.0.0.0 --port ${PORT:-8010}"]

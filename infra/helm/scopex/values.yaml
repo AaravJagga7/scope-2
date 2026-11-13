@@ -111,7 +111,7 @@ order:
       memory: 512Mi
 checkout:
   image: scopex-checkout:latest
-  replicas: 4
+  replicas: 2
   port: 8006
   resources:
     requests:

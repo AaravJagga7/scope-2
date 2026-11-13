@@ -36,6 +36,7 @@ import numpy as np
 
 from scopex.storage.repository import get_current_git_commit
 from storefront.catalog import PRODUCTS_BY_ID
+from storefront.lab import TESTBED_LABEL
 from storefront.shield import Shield, solve_pow
 from storefront.testbed import URLS
 
@@ -498,7 +499,7 @@ async def run_drop(
             test.steps.append(summary)
             t = (test.seconds[-1]["t"] + 2) if test.seconds else t
         test.result = {
-            "label": "validated on local testbed",
+            "label": TESTBED_LABEL,
             "drop_product": DROP_PRODUCT,
             "params": params.__dict__,
             "testbed_config": testbed_config,
@@ -536,7 +537,7 @@ def save_drop_result(test: Any) -> str:
     path = RESULTS_DIR / f"drop_test_{stamp}_{test.id}.json"
     record = {
         "experiment": "flash_sale_drop",
-        "label": "validated on local testbed",
+        "label": TESTBED_LABEL,
         "test_id": test.id,
         "started_at": test.started_at,
         "finished_at": time.time(),

@@ -6,6 +6,7 @@ Run with ``python -m storefront`` and open http://127.0.0.1:8010.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import os
 import time
 import uuid
@@ -16,7 +17,7 @@ from typing import Any
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -24,6 +25,7 @@ from storefront.catalog import CATEGORIES, PRODUCTS_BY_ID, search
 from storefront.drop import run_drop
 from storefront.lab import (
     SLO,
+    TESTBED_LABEL,
     LoadRunner,
     LoadTest,
     StoreTelemetry,
@@ -65,6 +67,23 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Bazaaro", lifespan=lifespan)
+
+# Optional write protection for public deployments: when LAB_TOKEN is set, anything that
+# changes the testbed or starts/stops tests needs the header ``x-lab-token``.
+LAB_TOKEN = os.getenv("LAB_TOKEN", "")
+_PROTECTED_PREFIXES = ("/api/testbed/apply", "/api/lab/slo", "/api/lab/tests", "/api/lab/shield/")
+
+
+@app.middleware("http")
+async def lab_token_guard(request: Request, call_next):  # type: ignore[no-untyped-def]
+    if (
+        LAB_TOKEN
+        and request.method != "GET"
+        and request.url.path.startswith(_PROTECTED_PREFIXES)
+        and not hmac.compare_digest(request.headers.get("x-lab-token", ""), LAB_TOKEN)
+    ):
+        return JSONResponse({"detail": "Lab token required"}, status_code=401)
+    return await call_next(request)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -339,6 +358,8 @@ async def checkout(body: CheckoutBody, request: Request, response: Response) -> 
 def health() -> dict[str, Any]:
     snap = telemetry.snapshot(slo, runner.current)
     snap["testbed"] = testbed.status()["state"]
+    snap["testbed_label"] = TESTBED_LABEL
+    snap["write_protected"] = bool(LAB_TOKEN)
     snap["slo"] = slo.__dict__
     cfg = shield.config
     snap["shield"] = {
@@ -464,7 +485,9 @@ async def start_test(body: TestBody, request: Request) -> dict[str, Any]:
         runner.tests[test.id] = test
         runner.current = test
         test.status = "running"
-        base = str(request.base_url)
+        # Simulated shoppers must reach the store over loopback so their per-shopper
+        # X-Forwarded-For IPs are trusted; behind a public proxy use SCOPEX_INTERNAL_URL.
+        base = os.getenv("SCOPEX_INTERNAL_URL") or str(request.base_url)
         asyncio.create_task(run_drop(test, runner, shield, base, status["config"]))
         return test.to_dict()
     test = LoadTest(

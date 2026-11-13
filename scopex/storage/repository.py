@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,7 +20,12 @@ DEFAULT_PARQUET_PATH = BASE_DIR / "data" / "experiments.parquet"
 
 
 def get_current_git_commit() -> str:
-    """Retrieves current git commit hash for provenance tracking."""
+    """Retrieves current git commit hash for provenance tracking.
+
+    Falls back to ``SCOPEX_GIT_COMMIT`` for deployments built without a ``.git`` directory.
+    """
+    if os.getenv("SCOPEX_GIT_COMMIT"):
+        return os.environ["SCOPEX_GIT_COMMIT"]
     try:
         res = subprocess.run(
             ["git", "rev-parse", "HEAD"],

@@ -75,6 +75,7 @@ code { font: 12px/1.4 ui-monospace, "SF Mono", Menlo, monospace; background: var
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
 .banner { display: none; padding: 12px 16px; border-radius: 14px; font-size: 13px; }
 .banner.show { display: block; }
+.demo-note { padding: 12px 16px; border-radius: 14px; font-size: 13px; background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
 .banner.degraded { background: color-mix(in srgb, var(--bad) 14%, var(--surface)); }
 .banner.busy { background: color-mix(in srgb, var(--warn) 18%, var(--surface)); }
 

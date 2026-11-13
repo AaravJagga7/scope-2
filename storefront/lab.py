@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import os
 import random
 import time
 import uuid
@@ -38,6 +39,8 @@ from storefront.testbed import URLS
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
+# Honesty label for live results; set e.g. "validated on cloud testbed (Railway)" when deployed.
+TESTBED_LABEL = os.getenv("SCOPEX_TESTBED_LABEL", "validated on local testbed")
 CONNECTIONS_PER_REPLICA = 6.0
 
 
@@ -381,7 +384,7 @@ class LoadTest:
         return {
             "id": self.id,
             "kind": self.kind,
-            "label": "validated on local testbed",
+            "label": TESTBED_LABEL,
             "params": self.params,
             "status": self.status,
             "started_at": self.started_at,
